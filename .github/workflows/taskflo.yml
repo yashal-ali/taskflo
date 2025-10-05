@@ -58,29 +58,28 @@ jobs:
             CURRENT_MONTH=$(date +%m)
             CURRENT_DOW=$(date +%u)  # 1=Monday, 7=Sunday
             
-            if [ "${{ github.event.schedule }}" == "0 9 1 * *" ] && [ "$CURRENT_DAY" = "01" ]; then
+            if [ "$CURRENT_DAY" = "01" ]; then
               echo "TYPE=monthly" >> $GITHUB_OUTPUT
-            elif [ "${{ github.event.schedule }}" == "0 9 25 3,6,9,12 *" ] && [ "$CURRENT_DAY" = "25" ] && { [ "$CURRENT_MONTH" = "03" ] || [ "$CURRENT_MONTH" = "06" ] || [ "$CURRENT_MONTH" = "09" ] || [ "$CURRENT_MONTH" = "12" ]; }; then
+            elif [ "$CURRENT_DAY" = "25" ] && { [ "$CURRENT_MONTH" = "03" ] || [ "$CURRENT_MONTH" = "06" ] || [ "$CURRENT_MONTH" = "09" ] || [ "$CURRENT_MONTH" = "12" ]; }; then
               echo "TYPE=quarterly" >> $GITHUB_OUTPUT
-            elif [ "${{ github.event.schedule }}" == "0 9 * * 1" ] && [ "$CURRENT_DOW" = "1" ]; then
+            elif [ "$CURRENT_DOW" = "1" ]; then
               echo "TYPE=reminder" >> $GITHUB_OUTPUT
-            elif [ "${{ github.event.schedule }}" == "0 18 * * *" ]; then
-              echo "TYPE=daily" >> $GITHUB_OUTPUT
             else
-              echo "TYPE=skip" >> $GITHUB_OUTPUT
+              echo "TYPE=daily" >> $GITHUB_OUTPUT
             fi
             echo "DRY_RUN=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Debug environment variables
         run: |
-          echo "SMTP_SERVER: ${{ secrets.SMTP_SERVER }}"
-          echo "SMTP_PORT: ${{ secrets.SMTP_PORT }}"
-          echo "SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}"
-          echo "SMTP_PASSWORD exists: ${{ secrets.SMTP_PASSWORD != '' }}"
+          echo "=== DEBUG INFORMATION ==="
+          echo "SMTP_SERVER: ${{ secrets.SMTP_SERVER && '***SET***' || '***MISSING***' }}"
+          echo "SMTP_PORT: ${{ secrets.SMTP_PORT && secrets.SMTP_PORT || '***MISSING***' }}"
+          echo "SMTP_USERNAME: ${{ secrets.SMTP_USERNAME && '***SET***' || '***MISSING***' }}"
+          echo "SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD && '***SET***' || '***MISSING***' }}"
           echo "Schedule type: ${{ steps.schedule_type.outputs.TYPE }}"
           echo "Dry run: ${{ steps.schedule_type.outputs.DRY_RUN }}"
-          echo "Today is: $(date +%Y-%m-%d)"
+          echo "Today: $(date +%Y-%m-%d)"
           echo "Day of week: $(date +%A)"
           echo "Day of month: $(date +%d)"
           echo "Month: $(date +%m)"
@@ -88,12 +87,24 @@ jobs:
       - name: Check database file
         run: |
           if [ ! -f "task_management.db" ]; then
-            echo "❌ task_management.db not found in current directory!"
-            echo "Current directory contents:"
+            echo "❌ task_management.db not found!"
+            echo "Current directory: $(pwd)"
+            echo "Directory contents:"
             ls -la
             exit 1
           fi
           echo "✅ Database file found: $(du -h task_management.db | cut -f1)"
+
+      - name: Create environment file for testing
+        run: |
+          echo "Creating .env file for testing..."
+          cat > .env << EOF
+          SMTP_SERVER=${{ secrets.SMTP_SERVER }}
+          SMTP_PORT=${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME=${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
+          EOF
+          echo "✅ Created .env file with secrets"
 
       - name: Send Compliance Emails
         if: steps.schedule_type.outputs.TYPE != 'skip'
@@ -103,7 +114,16 @@ jobs:
           SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
         run: |
+          echo "=== EXECUTION START ==="
           echo "Running for schedule type: ${{ steps.schedule_type.outputs.TYPE }}"
+          
+          # Debug: Check if environment variables are set
+          echo "Environment check:"
+          echo "SMTP_SERVER env: ${SMTP_SERVER:0:3}***"  # Show first 3 chars only
+          echo "SMTP_PORT env: $SMTP_PORT"
+          echo "SMTP_USERNAME env: ${SMTP_USERNAME:0:3}***"  # Show first 3 chars only
+          echo "SMTP_PASSWORD env: ${SMTP_PASSWORD:0:3}***"  # Show first 3 chars only
+          
           if [ "${{ steps.schedule_type.outputs.DRY_RUN }}" = "true" ]; then
             echo "🚀 DRY RUN - No emails will be sent"
             python script.py "${{ steps.schedule_type.outputs.TYPE }}" --dry-run
@@ -116,6 +136,14 @@ jobs:
         if: steps.schedule_type.outputs.TYPE == 'skip'
         run: |
           echo "⏭️ Skipping execution - not the right day for this schedule type"
+
+      - name: Cleanup .env file
+        if: always()
+        run: |
+          if [ -f ".env" ]; then
+            rm .env
+            echo "✅ Cleaned up .env file"
+          fi
 
       - name: Upload logs on failure
         if: failure()
