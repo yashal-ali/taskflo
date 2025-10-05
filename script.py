@@ -26,16 +26,32 @@ class ComplianceEmailSystem:
     def __init__(self, db_path: str = "task_management.db"):
         self.db_path = db_path
         self.smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
-        self.smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+        
+        # FIXED: Handle empty or invalid SMTP_PORT values
+        smtp_port_str = os.environ.get("SMTP_PORT", "587")
+        try:
+            self.smtp_port = int(smtp_port_str) if smtp_port_str else 587
+        except ValueError:
+            logger.warning(f"Invalid SMTP_PORT value '{smtp_port_str}', using default 587")
+            self.smtp_port = 587
+            
         self.smtp_username = os.environ.get("SMTP_USERNAME")
         self.smtp_password = os.environ.get("SMTP_PASSWORD")
 
+        # Debug environment variables (mask password)
+        smtp_password_debug = "***SET***" if self.smtp_password else "***MISSING***"
         logger.info(
-            f"SMTP Configuration: Server={self.smtp_server}, Port={self.smtp_port}, Username={self.smtp_username}"
+            f"SMTP Configuration: Server={self.smtp_server}, Port={self.smtp_port}, "
+            f"Username={self.smtp_username}, Password={smtp_password_debug}"
         )
 
         if not all([self.smtp_server, self.smtp_port, self.smtp_username, self.smtp_password]):
-            logger.error("❌ SMTP credentials are incomplete or missing!")
+            missing = []
+            if not self.smtp_server: missing.append("SMTP_SERVER")
+            if not self.smtp_port: missing.append("SMTP_PORT")
+            if not self.smtp_username: missing.append("SMTP_USERNAME")
+            if not self.smtp_password: missing.append("SMTP_PASSWORD")
+            logger.error(f"❌ Missing SMTP credentials: {missing}")
         self.data = None
     
     def load_database_data(self) -> bool:
@@ -88,7 +104,8 @@ class ComplianceEmailSystem:
                 logger.warning(f"Filtered out {original_count - len(self.data)} tasks without valid email addresses")
             
             logger.info(f"Successfully loaded {len(self.data)} tasks across {self.data['Domain'].nunique()} domains")
-            logger.info(f"Users with tasks: {self.data['Email'].unique().tolist()}")
+            if len(self.data) > 0:
+                logger.info(f"Users with tasks: {self.data['Email'].unique().tolist()}")
             return True
             
         except Exception as e:
