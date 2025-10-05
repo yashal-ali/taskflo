@@ -6,6 +6,8 @@ from datetime import datetime, date
 import smtplib
 import io
 from database import *
+import os
+
 def set_page_styling():
     st.markdown("""
     <style>
@@ -892,26 +894,9 @@ def show_comments_page():
 
 def show_email_page():
     st.title("Email Center")
-    
-    st.markdown("""
-    <div style='
-        background-color: #fffbeb;
-        padding: 1.25rem;
-        border-radius: 6px;
-        border-left: 3px solid #f59e0b;
-        margin-bottom: 1.5rem;
-    '>
-    <h4 style='color: #92400e; margin-top: 0; font-size: 1rem;'>Email Configuration</h4>
-    <p style='color: #92400e; margin-bottom: 0; font-size: 0.875rem;'>Enter your Gmail credentials. For security, use an App Password instead of your regular password.</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        sender_email = st.text_input("Sender Email", placeholder="your.email@gmail.com")
-    with col2:
-        sender_password = st.text_input("App Password", type="password", placeholder="Enter app password")
-    
+      
+    sender_email=st.secrets.get("SENDER_EMAIL")
+    sender_password=st.secrets.get("SENDER_PASSWORD")
     st.markdown("<br>", unsafe_allow_html=True)
     
     email_mode = st.radio("Select Mode", ["Send to All Users", "Send to Individual"], horizontal=True)
