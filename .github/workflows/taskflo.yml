@@ -25,12 +25,13 @@ on:
       dry_run:
         description: 'Run in dry-run mode (no emails sent)'
         required: false
-        default: false
+        default: true
         type: boolean
 
 jobs:
   send-compliance-emails:
     runs-on: ubuntu-latest
+    environment: 'env'  # ✅ ADD THIS LINE - uses your environment with secrets
 
     steps:
       - name: Checkout repository
@@ -70,13 +71,14 @@ jobs:
             echo "DRY_RUN=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Debug environment variables
+      - name: Debug environment and secrets
         run: |
-          echo "=== DEBUG INFORMATION ==="
-          echo "SMTP_SERVER: ${{ secrets.SMTP_SERVER && '***SET***' || '***MISSING***' }}"
-          echo "SMTP_PORT: ${{ secrets.SMTP_PORT && secrets.SMTP_PORT || '***MISSING***' }}"
-          echo "SMTP_USERNAME: ${{ secrets.SMTP_USERNAME && '***SET***' || '***MISSING***' }}"
-          echo "SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD && '***SET***' || '***MISSING***' }}"
+          echo "=== ENVIRONMENT & SECRETS DEBUG ==="
+          echo "Environment: ${{ job.environment }}"
+          echo "SMTP_SERVER exists: ${{ secrets.SMTP_SERVER != '' }}"
+          echo "SMTP_PORT exists: ${{ secrets.SMTP_PORT != '' }}"
+          echo "SMTP_USERNAME exists: ${{ secrets.SMTP_USERNAME != '' }}"
+          echo "SMTP_PASSWORD exists: ${{ secrets.SMTP_PASSWORD != '' }}"
           echo "Schedule type: ${{ steps.schedule_type.outputs.TYPE }}"
           echo "Dry run: ${{ steps.schedule_type.outputs.DRY_RUN }}"
           echo "Today: $(date +%Y-%m-%d)"
@@ -95,17 +97,6 @@ jobs:
           fi
           echo "✅ Database file found: $(du -h task_management.db | cut -f1)"
 
-      - name: Create environment file for testing
-        run: |
-          echo "Creating .env file for testing..."
-          cat > .env << EOF
-          SMTP_SERVER=${{ secrets.SMTP_SERVER }}
-          SMTP_PORT=${{ secrets.SMTP_PORT }}
-          SMTP_USERNAME=${{ secrets.SMTP_USERNAME }}
-          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
-          EOF
-          echo "✅ Created .env file with secrets"
-
       - name: Send Compliance Emails
         if: steps.schedule_type.outputs.TYPE != 'skip'
         env:
@@ -118,11 +109,11 @@ jobs:
           echo "Running for schedule type: ${{ steps.schedule_type.outputs.TYPE }}"
           
           # Debug: Check if environment variables are set
-          echo "Environment check:"
-          echo "SMTP_SERVER env: ${SMTP_SERVER:0:3}***"  # Show first 3 chars only
-          echo "SMTP_PORT env: $SMTP_PORT"
-          echo "SMTP_USERNAME env: ${SMTP_USERNAME:0:3}***"  # Show first 3 chars only
-          echo "SMTP_PASSWORD env: ${SMTP_PASSWORD:0:3}***"  # Show first 3 chars only
+          echo "Environment variables check:"
+          echo "SMTP_SERVER length: ${#SMTP_SERVER} characters"
+          echo "SMTP_PORT: $SMTP_PORT"
+          echo "SMTP_USERNAME length: ${#SMTP_USERNAME} characters"
+          echo "SMTP_PASSWORD length: ${#SMTP_PASSWORD} characters"
           
           if [ "${{ steps.schedule_type.outputs.DRY_RUN }}" = "true" ]; then
             echo "🚀 DRY RUN - No emails will be sent"
@@ -136,14 +127,6 @@ jobs:
         if: steps.schedule_type.outputs.TYPE == 'skip'
         run: |
           echo "⏭️ Skipping execution - not the right day for this schedule type"
-
-      - name: Cleanup .env file
-        if: always()
-        run: |
-          if [ -f ".env" ]; then
-            rm .env
-            echo "✅ Cleaned up .env file"
-          fi
 
       - name: Upload logs on failure
         if: failure()
@@ -161,3 +144,4 @@ jobs:
           echo "✅ Compliance email automation completed successfully!"
           echo "📅 Schedule type: ${{ steps.schedule_type.outputs.TYPE }}"
           echo "🕒 Run time: $(date)"
+          echo "🏭 Environment used: ${{ job.environment }}"
