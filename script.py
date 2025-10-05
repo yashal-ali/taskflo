@@ -1,47 +1,43 @@
-#!/usr/bin/env python3
-"""
-Compliance Email Automation System
-Automates task notifications and reminders from SQLite database
-"""
-
+import os
+import sys
+import logging
 import sqlite3
 import smtplib
-import os
-import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime, timedelta
-import sys
-from typing import List, Dict, Any
-from dotenv import load_dotenv
+from datetime import datetime
+from typing import Dict, Any
 import pandas as pd
 
+# ✅ Conditional dotenv loading
+if os.path.exists(".env"):
+    from dotenv import load_dotenv
+    load_dotenv()
+    print("✅ Loaded .env file for local testing")
+else:
+    print("🌀 No .env file found - using system environment variables")
+
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-load_dotenv()
 
 class ComplianceEmailSystem:
-    def __init__(self, db_path: str = 'task_management.db'):
+    def __init__(self, db_path: str = "task_management.db"):
         self.db_path = db_path
-        self.smtp_server = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
-        
-        # FIXED: Better port handling with default fallback
-        smtp_port_str = os.getenv('SMTP_PORT', '').strip()
-        try:
-            self.smtp_port = int(smtp_port_str) if smtp_port_str else 587
-        except ValueError:
-            logger.warning(f"Invalid SMTP_PORT '{smtp_port_str}', using default 587")
-            self.smtp_port = 587
-            
-        self.smtp_username = os.getenv('SMTP_USERNAME')
-        self.smtp_password = os.getenv('SMTP_PASSWORD')
+        self.smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
+        self.smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+        self.smtp_username = os.environ.get("SMTP_USERNAME")
+        self.smtp_password = os.environ.get("SMTP_PASSWORD")
+
+        logger.info(
+            f"SMTP Configuration: Server={self.smtp_server}, Port={self.smtp_port}, Username={self.smtp_username}"
+        )
+
+        if not all([self.smtp_server, self.smtp_port, self.smtp_username, self.smtp_password]):
+            logger.error("❌ SMTP credentials are incomplete or missing!")
         self.data = None
-        
-        # Debug logging
-        logger.info(f"SMTP Configuration: Server={self.smtp_server}, Port={self.smtp_port}, Username={self.smtp_username}")
-        
+    
     def load_database_data(self) -> bool:
         """Load and validate data from SQLite database"""
         try:
@@ -164,7 +160,7 @@ class ComplianceEmailSystem:
     def create_email_content(self, user_tasks: pd.DataFrame, schedule_type: str) -> str:
         """Create HTML email content for user tasks"""
         user_email = user_tasks['Email'].iloc[0]
-        user_name = user_tasks['User Name'].iloc[0] if 'User Name' in user_tasks.columns else 'User'
+        user_name = user_tasks['User Name'].iloc[0] if 'User Name' in user_tasks.columns and pd.notna(user_tasks['User Name'].iloc[0]) else 'User'
         task_count = len(user_tasks)
         
         email_type = schedule_type.capitalize()
@@ -340,7 +336,7 @@ class ComplianceEmailSystem:
             print(f"🏢 Domains affected: {filtered_tasks['Domain'].nunique()}")
             
             for email, tasks in grouped_tasks:
-                user_name = tasks['User Name'].iloc[0] if 'User Name' in tasks.columns else 'Unknown'
+                user_name = tasks['User Name'].iloc[0] if 'User Name' in tasks.columns and pd.notna(tasks['User Name'].iloc[0]) else 'Unknown'
                 print(f"   📨 To: {user_name} ({email}), Tasks: {len(tasks)}")
                 
             return {
@@ -374,52 +370,40 @@ class ComplianceEmailSystem:
         logger.info(f"Processing complete: {emails_sent} emails sent, {emails_failed} failed, {result['domains_affected']} domains affected")
         return result
 
+
 def main():
-    # Parse command line arguments
-    dry_run = '--dry-run' in sys.argv
-    schedule_args = [arg for arg in sys.argv[1:] if not arg.startswith('--')]
-    
-    if len(schedule_args) != 1:
-        print("Usage: python compliance_email_system.py <schedule_type> [--dry-run]")
-        print("Schedule types: daily, monthly, quarterly, reminder")
-        print("Options: --dry-run (test without sending emails)")
+    dry_run = "--dry-run" in sys.argv
+    args = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
+
+    if len(args) != 1:
+        print("Usage: python script.py <schedule_type> [--dry-run]")
+        print("Valid schedule types: daily, monthly, quarterly, reminder")
         sys.exit(1)
-    
-    schedule_type = schedule_args[0].lower()
-    valid_schedules = ['daily', 'monthly', 'quarterly', 'reminder']
-    
-    if schedule_type not in valid_schedules:
-        print(f"Error: Schedule type must be one of {valid_schedules}")
+
+    schedule_type = args[0].lower()
+    valid_types = ["daily", "monthly", "quarterly", "reminder"]
+
+    if schedule_type not in valid_types:
+        print(f"Invalid schedule type. Must be one of {valid_types}")
         sys.exit(1)
-    
-    # Database file path
-    db_file = 'task_management.db'
-    
-    # Check if database file exists
+
+    db_file = "task_management.db"
     if not os.path.exists(db_file):
         logger.error(f"Database file not found: {db_file}")
         sys.exit(1)
-    
-    # Initialize and run the system
+
     system = ComplianceEmailSystem(db_file)
     result = system.process_tasks(schedule_type, dry_run=dry_run)
-    
-    if result['success']:
+
+    if result.get("success"):
         if dry_run:
-            print(f"\n✅ Dry run completed for {schedule_type} tasks")
-            print(f"📧 Would send emails: {result['would_send_emails']}")
-            print(f"📊 Total tasks: {result['total_tasks']}")
-            print(f"🏢 Domains affected: {result['domains_affected']}")
+            print(f"✅ DRY RUN completed for {schedule_type} tasks")
         else:
             print(f"✅ Successfully processed {schedule_type} tasks")
-            print(f"📧 Emails sent: {result['emails_sent']}")
-            print(f"❌ Emails failed: {result['emails_failed']}")
-            print(f"📊 Total tasks: {result['total_tasks']}")
-            print(f"👥 Unique users: {result['unique_users']}")
-            print(f"🏢 Domains affected: {result['domains_affected']}")
     else:
-        print(f"❌ Processing failed: {result.get('error', 'Unknown error')}")
+        print(f"❌ Failed: {result.get('error', 'Unknown error')}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
