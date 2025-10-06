@@ -225,7 +225,7 @@ class ComplianceEmailSystem:
         </head>
         <body>
             <div class="header">
-                <h2>Compliance Task Escalation Report</h2>
+                <h2>Compliance Task  Report</h2>
                 <p>Domain: <strong>{domain}</strong> | Department Head: <strong></strong></p>
             </div>
             
@@ -345,7 +345,7 @@ class ComplianceEmailSystem:
             
             # Create escalation email content
             html_content = self.create_escalation_email_content(domain_tasks, department_head_email, domain)
-            subject = f"🚨 URGENT: {domain} Department - {len(domain_tasks)} Tasks Overdue by 15+ Days"
+            subject = f"{domain} Department - {len(domain_tasks)} Tasks Overdue by 15+ Days"
             
             # Send escalation email
             if self.send_email(department_head_email, subject, html_content):
