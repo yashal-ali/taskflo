@@ -72,7 +72,7 @@ def init_database():
             pass
 
     conn.commit()
-    conn.close()
+    # Don't close the connection - it's cached and will be reused
 
 
 # ✅ Helper Functions
@@ -81,14 +81,12 @@ def get_user_by_email(email):
     c = conn.cursor()
     c.execute('SELECT * FROM users WHERE email = ?', (email,))
     user = c.fetchone()
-    conn.close()
     return user
 
 
 def get_all_users():
     conn = get_db_connection()
     df = pd.read_sql_query('SELECT * FROM users', conn)
-    conn.close()
     return df
 
 
@@ -99,7 +97,6 @@ def create_task(title, description, domain, assigned_to, attachment, status, due
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
               (title, description, domain, assigned_to, attachment, status, due_date, frequency))
     conn.commit()
-    conn.close()
 
 
 def get_tasks(user_id=None, role='user'):
@@ -119,7 +116,6 @@ def get_tasks(user_id=None, role='user'):
                    WHERE t.assigned_to = ?
                    ORDER BY t.created_at DESC'''
         df = pd.read_sql_query(query, conn, params=(user_id,))
-    conn.close()
     return df
 
 
@@ -128,7 +124,6 @@ def update_task_status(task_id, status):
     c = conn.cursor()
     c.execute('UPDATE tasks SET status = ? WHERE task_id = ?', (status, task_id))
     conn.commit()
-    conn.close()
 
 
 def update_task(task_id, title, description, domain, assigned_to, attachment, status, due_date, frequency):
@@ -138,7 +133,6 @@ def update_task(task_id, title, description, domain, assigned_to, attachment, st
                  attachment=?, status=?, due_date=?, frequency=? WHERE task_id=?''',
               (title, description, domain, assigned_to, attachment, status, due_date, frequency, task_id))
     conn.commit()
-    conn.close()
 
 
 def delete_task(task_id):
@@ -147,7 +141,6 @@ def delete_task(task_id):
     c.execute('DELETE FROM comments WHERE task_id = ?', (task_id,))
     c.execute('DELETE FROM tasks WHERE task_id = ?', (task_id,))
     conn.commit()
-    conn.close()
 
 
 def get_comments(task_id):
@@ -157,7 +150,6 @@ def get_comments(task_id):
                WHERE c.task_id = ?
                ORDER BY c.created_at ASC'''
     df = pd.read_sql_query(query, conn, params=(task_id,))
-    conn.close()
     return df
 
 
@@ -167,7 +159,6 @@ def add_comment(task_id, user_id, comment_text):
     c.execute('INSERT INTO comments (task_id, user_id, comment_text) VALUES (?, ?, ?)',
               (task_id, user_id, comment_text))
     conn.commit()
-    conn.close()
 
 
 def add_user(name, email, role='user'):
@@ -176,10 +167,8 @@ def add_user(name, email, role='user'):
     try:
         c.execute('INSERT INTO users (name, email, role) VALUES (?, ?, ?)', (name, email, role))
         conn.commit()
-        conn.close()
         return True
     except sqlite3.IntegrityError:
-        conn.close()
         return False
 
 
