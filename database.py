@@ -12,10 +12,10 @@ import streamlit as st
 @st.cache_resource
 def get_db_connection():
     """
-    Creates or returns a persistent SQLite connection
-    stored in Streamlit's user-writable directory.
+    Creates or returns a persistent SQLite connection.
+    Database file stored in the same directory as the app.
     """
-    db_path = os.path.join(st.experimental_user_dir(), "task_management.db")
+    db_path = "task_management.db"
     conn = sqlite3.connect(db_path, check_same_thread=False)
     return conn
 
