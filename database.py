@@ -9,10 +9,9 @@ import streamlit as st
 
 
 # ✅ Database Connection
-@st.cache_resource
 def get_db_connection():
     """
-    Creates or returns a persistent SQLite connection.
+    Creates a new SQLite connection.
     Database file stored in the same directory as the app.
     """
     db_path = "task_management.db"
@@ -72,7 +71,7 @@ def init_database():
             pass
 
     conn.commit()
-    # Don't close the connection - it's cached and will be reused
+    conn.close()
 
 
 # ✅ Helper Functions
