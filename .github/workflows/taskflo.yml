@@ -1,4 +1,3 @@
-
 name: Compliance Email Automation
 
 on:
@@ -15,8 +14,8 @@ on:
     # Weekly reminders - every Monday at 9:00 AM Pakistan Time (4:00 AM UTC)
     - cron: '0 4 * * 1'
 
-    # Escalation reports - every day at 9:00 AM Pakistan Time (4:00 AM UTC)
-    - cron: '0 4 * * *'
+    # Escalation reports - every day at 11:00 AM Pakistan Time (6:00 AM UTC)
+    - cron: '0 6 * * *'
 
   workflow_dispatch:
     inputs:
@@ -68,7 +67,8 @@ jobs:
             CURRENT_DOW=$(date +%u)  # 1=Monday
             CURRENT_HOUR=$(date +%H)
 
-            if [ "$CURRENT_HOUR" = "04" ]; then  # 4 AM UTC = 9 AM Pakistan
+            # Determine schedule type based on time (UTC)
+            if [ "$CURRENT_HOUR" = "04" ]; then  # 9 AM PKT
               if [ "$CURRENT_DAY" = "01" ]; then
                 echo "TYPE=monthly" >> $GITHUB_OUTPUT
               elif [ "$CURRENT_DAY" = "25" ] && [[ "$CURRENT_MONTH" =~ ^(03|06|09|12)$ ]]; then
@@ -78,9 +78,12 @@ jobs:
               else
                 echo "TYPE=daily" >> $GITHUB_OUTPUT
               fi
+            elif [ "$CURRENT_HOUR" = "06" ]; then  # 11 AM PKT
+              echo "TYPE=escalation" >> $GITHUB_OUTPUT
             else
               echo "TYPE=skip" >> $GITHUB_OUTPUT
             fi
+
             echo "DRY_RUN=false" >> $GITHUB_OUTPUT
           fi
 
