@@ -2,23 +2,37 @@ from datetime import datetime, date
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import io
 import sqlite3
 import pandas as pd
+import os
+import streamlit as st
 
 
-# Database setup
+# ✅ Database Connection
+@st.cache_resource
+def get_db_connection():
+    """
+    Creates or returns a persistent SQLite connection
+    stored in Streamlit's user-writable directory.
+    """
+    db_path = os.path.join(st.experimental_user_dir(), "task_management.db")
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    return conn
+
+
+# ✅ Initialize Database (create tables if not exist)
 def init_database():
-    conn = sqlite3.connect('task_management.db')
+    conn = get_db_connection()
     c = conn.cursor()
     
+    # Create tables
     c.execute('''CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         email TEXT UNIQUE NOT NULL,
         role TEXT NOT NULL
     )''')
-    
+
     c.execute('''CREATE TABLE IF NOT EXISTS tasks (
         task_id INTEGER PRIMARY KEY AUTOINCREMENT,
         title TEXT NOT NULL,
@@ -32,16 +46,7 @@ def init_database():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (assigned_to) REFERENCES users(user_id)
     )''')
-    
-    try:
-        c.execute("SELECT attachment FROM tasks LIMIT 1")
-    except sqlite3.OperationalError:
-        try:
-            c.execute("ALTER TABLE tasks ADD COLUMN attachment TEXT")
-            conn.commit()
-        except sqlite3.OperationalError:
-            pass
-    
+
     c.execute('''CREATE TABLE IF NOT EXISTS comments (
         comment_id INTEGER PRIMARY KEY AUTOINCREMENT,
         task_id INTEGER,
@@ -51,27 +56,26 @@ def init_database():
         FOREIGN KEY (task_id) REFERENCES tasks(task_id),
         FOREIGN KEY (user_id) REFERENCES users(user_id)
     )''')
-    
+
+    # Default Users
     users = [
         ('Admin','admin@company.com', 'admin'),
         ('Yashal Ali', 'yashalalifarooqui30@gmail.com', 'user'),
         ('Ali Yashal', 'aliyashal309@gmail.com', 'user'),
         ('Farooqui Yashal', 'farooquiyashal@gmail.com', 'user')
     ]
-    
+
     for user in users:
         try:
             c.execute('INSERT INTO users (name, email, role) VALUES (?, ?, ?)', user)
         except sqlite3.IntegrityError:
             pass
-    
+
     conn.commit()
     conn.close()
 
-# Database helper functions
-def get_db_connection():
-    return sqlite3.connect('task_management.db')
 
+# ✅ Helper Functions
 def get_user_by_email(email):
     conn = get_db_connection()
     c = conn.cursor()
@@ -80,11 +84,13 @@ def get_user_by_email(email):
     conn.close()
     return user
 
+
 def get_all_users():
     conn = get_db_connection()
     df = pd.read_sql_query('SELECT * FROM users', conn)
     conn.close()
     return df
+
 
 def create_task(title, description, domain, assigned_to, attachment, status, due_date, frequency):
     conn = get_db_connection()
@@ -94,6 +100,7 @@ def create_task(title, description, domain, assigned_to, attachment, status, due
               (title, description, domain, assigned_to, attachment, status, due_date, frequency))
     conn.commit()
     conn.close()
+
 
 def get_tasks(user_id=None, role='user'):
     conn = get_db_connection()
@@ -115,12 +122,14 @@ def get_tasks(user_id=None, role='user'):
     conn.close()
     return df
 
+
 def update_task_status(task_id, status):
     conn = get_db_connection()
     c = conn.cursor()
     c.execute('UPDATE tasks SET status = ? WHERE task_id = ?', (status, task_id))
     conn.commit()
     conn.close()
+
 
 def update_task(task_id, title, description, domain, assigned_to, attachment, status, due_date, frequency):
     conn = get_db_connection()
@@ -131,6 +140,7 @@ def update_task(task_id, title, description, domain, assigned_to, attachment, st
     conn.commit()
     conn.close()
 
+
 def delete_task(task_id):
     conn = get_db_connection()
     c = conn.cursor()
@@ -138,6 +148,7 @@ def delete_task(task_id):
     c.execute('DELETE FROM tasks WHERE task_id = ?', (task_id,))
     conn.commit()
     conn.close()
+
 
 def get_comments(task_id):
     conn = get_db_connection()
@@ -149,6 +160,7 @@ def get_comments(task_id):
     conn.close()
     return df
 
+
 def add_comment(task_id, user_id, comment_text):
     conn = get_db_connection()
     c = conn.cursor()
@@ -156,6 +168,7 @@ def add_comment(task_id, user_id, comment_text):
               (task_id, user_id, comment_text))
     conn.commit()
     conn.close()
+
 
 def add_user(name, email, role='user'):
     conn = get_db_connection()
@@ -169,13 +182,15 @@ def add_user(name, email, role='user'):
         conn.close()
         return False
 
+
+# ✅ Email Summary Function
 def send_email_summary(user_email, user_name, tasks_df, sender_email, sender_password):
     try:
         msg = MIMEMultipart('alternative')
         msg['Subject'] = f'Pending Tasks Summary – {datetime.now().strftime("%B %Y")}'
         msg['From'] = sender_email
         msg['To'] = user_email
-        
+
         html = f"""
         <html>
           <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1a202c; line-height: 1.6;">
@@ -184,61 +199,55 @@ def send_email_summary(user_email, user_name, tasks_df, sender_email, sender_pas
                 <h1 style="color: #1a202c; margin: 0 0 10px 0; font-size: 28px; font-weight: 700;">Task Summary Report</h1>
                 <p style="color: #64748b; margin: 0; font-size: 16px;">Hello {user_name},</p>
               </div>
-              
               <p style="color: #475569; font-size: 15px; margin-bottom: 25px;">Here are your pending tasks that require attention:</p>
-              
               <table style="width: 100%; border-collapse: collapse; margin: 25px 0;">
                 <thead>
                   <tr style="border-bottom: 2px solid #e2e8f0;">
-                    <th style="padding: 12px 8px; text-align: left; color: #1e293b; font-weight: 600; font-size: 14px;">Task</th>
-                    <th style="padding: 12px 8px; text-align: left; color: #1e293b; font-weight: 600; font-size: 14px;">Domain</th>
-                    <th style="padding: 12px 8px; text-align: left; color: #1e293b; font-weight: 600; font-size: 14px;">Due Date</th>
-                    <th style="padding: 12px 8px; text-align: left; color: #1e293b; font-weight: 600; font-size: 14px;">Frequency</th>
-                    <th style="padding: 12px 8px; text-align: center; color: #1e293b; font-weight: 600; font-size: 14px;">Comments</th>
+                    <th style="padding: 12px 8px; text-align: left;">Task</th>
+                    <th style="padding: 12px 8px; text-align: left;">Domain</th>
+                    <th style="padding: 12px 8px; text-align: left;">Due Date</th>
+                    <th style="padding: 12px 8px; text-align: left;">Frequency</th>
+                    <th style="padding: 12px 8px; text-align: center;">Comments</th>
                   </tr>
                 </thead>
                 <tbody>
         """
-        
+
         for _, task in tasks_df.iterrows():
             html += f"""
                   <tr style="border-bottom: 1px solid #e2e8f0;">
-                    <td style="padding: 12px 8px;">
-                      <div style="font-weight: 600; color: #1e293b; margin-bottom: 4px; font-size: 14px;">{task['title']}</div>
-                      <div style="font-size: 13px; color: #64748b;">{task['description'][:60]}...</div>
-                    </td>
-                    <td style="padding: 12px 8px; color: #475569; font-size: 14px;">{task['domain']}</td>
-                    <td style="padding: 12px 8px; color: #475569; font-size: 14px;">{task['due_date']}</td>
-                    <td style="padding: 12px 8px; color: #475569; font-size: 14px;">{task['frequency']}</td>
-                    <td style="padding: 12px 8px; text-align: center; color: #2563eb; font-weight: 600; font-size: 14px;">{task['comment_count']}</td>
+                    <td style="padding: 12px 8px;"><b>{task['title']}</b><br><span style="color:#64748b;">{task['description'][:60]}...</span></td>
+                    <td style="padding: 12px 8px;">{task['domain']}</td>
+                    <td style="padding: 12px 8px;">{task['due_date']}</td>
+                    <td style="padding: 12px 8px;">{task['frequency']}</td>
+                    <td style="padding: 12px 8px; text-align:center; color:#2563eb;">{task['comment_count']}</td>
                   </tr>
             """
-        
+
         html += """
                 </tbody>
               </table>
-              
-              <div style="background-color: #f8fafc; border-left: 3px solid #2563eb; padding: 16px; margin: 25px 0;">
-                <p style="margin: 0; color: #334155; font-weight: 600; font-size: 14px;">Please update task statuses once completed.</p>
+              <div style="background-color:#f8fafc; border-left:3px solid #2563eb; padding:16px; margin:25px 0;">
+                <p style="margin:0;">Please update task statuses once completed.</p>
               </div>
-              
-              <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 13px;">
-                <p style="margin: 0;">Best regards,</p>
-                <p style="margin: 5px 0 0 0; font-weight: 600; color: #475569;">TaskFlow Pro Admin</p>
+              <div style="margin-top:40px; border-top:1px solid #e2e8f0; padding-top:10px; color:#64748b; font-size:13px;">
+                <p>Best regards,</p>
+                <p style="font-weight:600; color:#475569;">TaskFlow Pro Admin</p>
               </div>
             </div>
           </body>
         </html>
         """
-        
+
         part = MIMEText(html, 'html')
         msg.attach(part)
-        
+
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(sender_email, sender_password)
             server.send_message(msg)
-        
+
         return True
+
     except Exception as e:
         st.error(f"Error sending email to {user_email}: {str(e)}")
         return False
