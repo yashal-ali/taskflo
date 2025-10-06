@@ -226,7 +226,7 @@ class ComplianceEmailSystem:
         <body>
             <div class="header">
                 <h2>Compliance Task Escalation Report</h2>
-                <p>Domain: <strong>{domain}</strong> | Department Head: <strong>{department_head}</strong></p>
+                <p>Domain: <strong>{domain}</strong> | Department Head: <strong></strong></p>
             </div>
             
             <div class="urgent-section">
