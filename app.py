@@ -18,7 +18,7 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT
 import tempfile
 
 
-os.environ['PATH'] += ':/usr/bin'
+os.environ['PATH'] += os.pathsep + ':/usr/bin'
 def set_page_styling():
     st.markdown("""
     <style>
