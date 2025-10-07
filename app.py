@@ -7,6 +7,16 @@ import smtplib
 import io
 from database import *
 import os
+import plotly.express as px
+import plotly.graph_objects as go
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+import tempfile
+
 
 def set_page_styling():
     st.markdown("""
@@ -301,18 +311,30 @@ def show_login():
         email = st.text_input("Email Address", placeholder="your.email@company.com", label_visibility="collapsed")
         
         st.markdown("<br>", unsafe_allow_html=True)
-        
         if st.button("Sign In", use_container_width=True):
             user = get_user_by_email(email)
             if user:
-                st.session_state.user_id = user[0]
-                st.session_state.user_name = user[1]
-                st.session_state.user_email = user[2]
-                st.session_state.user_role = user[3]
+                # get_user_by_email returns a MongoDB document (dictionary)
+                st.session_state.user_id = str(user['_id'])
+                st.session_state.user_name = user['name']
+                st.session_state.user_email = user['email']
+                st.session_state.user_role = user['role']
                 st.session_state.logged_in = True
                 st.rerun()
             else:
-                st.error("User not found. Please check your email address.")
+               st.error("User not found. Please check your email address.")
+        
+        # if st.button("Sign In", use_container_width=True):
+        #     user = get_user_by_email(email)
+        #     if user:
+        #         st.session_state.user_id = user[0]
+        #         st.session_state.user_name = user[1]
+        #         st.session_state.user_email = user[2]
+        #         st.session_state.user_role = user[3]
+        #         st.session_state.logged_in = True
+        #         st.rerun()
+        #     else:
+        #         st.error("User not found. Please check your email address.")
         
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -673,7 +695,7 @@ def show_task_management():
             st.markdown(f"**Showing {len(filtered_df)} tasks**")
             
             for idx, row in filtered_df.iterrows():
-                with st.expander(f"{row['title']} - ID: {row['task_id']} ({row['assigned_name']})", expanded=False):
+                with st.expander(f"{row['title']} - Status-({row['status']})- ({row['assigned_name']})", expanded=False):
                     # Task info
                     st.markdown(f"**Description:** {row['description']}")
                     
@@ -754,6 +776,325 @@ def show_task_management():
         else:
             st.info("No tasks available")
 
+
+def save_plotly_as_image(fig, width=800, height=500):
+    """Convert plotly figure to image and return as Image object"""
+    img_bytes = fig.to_image(format="png", width=width, height=height)
+    img_buffer = io.BytesIO(img_bytes)
+    img_buffer.seek(0)
+    
+    # Save to temporary file
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
+        tmp.write(img_bytes)
+        tmp_path = tmp.name
+    
+    return tmp_path
+
+def generate_pdf_report(tasks_df, role):
+    """Generate a comprehensive PDF report of the analytics dashboard"""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    story = []
+    styles = getSampleStyleSheet()
+    temp_files = []  # Track temporary files for cleanup
+    
+    # Custom styles
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.HexColor('#2563eb'),
+        spaceAfter=30,
+        alignment=TA_CENTER
+    )
+    
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=16,
+        textColor=colors.HexColor('#1e40af'),
+        spaceAfter=12,
+        spaceBefore=12
+    )
+    
+    # Title
+    title = Paragraph("Analytics Dashboard Report", title_style)
+    story.append(title)
+    
+    # Date
+    date_text = Paragraph(f"Generated on: {datetime.now().strftime('%B %d, %Y at %I:%M %p')}", styles['Normal'])
+    story.append(date_text)
+    story.append(Spacer(1, 0.3*inch))
+    
+    # Summary Metrics
+    story.append(Paragraph("Summary Metrics", heading_style))
+    
+    metrics_data = [
+        ['Metric', 'Value'],
+        ['Total Tasks', str(len(tasks_df))],
+        ['Pending Tasks', str(len(tasks_df[tasks_df['status'] == 'Pending']))],
+        ['Completed Tasks', str(len(tasks_df[tasks_df['status'] == 'Completed']))],
+        ['Total Comments', str(int(tasks_df['comment_count'].sum()))]
+    ]
+    
+    metrics_table = Table(metrics_data, colWidths=[3*inch, 2*inch])
+    metrics_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2563eb')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 10),
+        ('TOPPADDING', (0, 1), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+    ]))
+    story.append(metrics_table)
+    story.append(Spacer(1, 0.3*inch))
+    
+    # Status Distribution
+    story.append(Paragraph("Status Distribution", heading_style))
+    status_counts = tasks_df['status'].value_counts()
+    status_data = [['Status', 'Count', 'Percentage']]
+    for status, count in status_counts.items():
+        percentage = f"{(count/len(tasks_df)*100):.1f}%"
+        status_data.append([status, str(count), percentage])
+    
+    status_table = Table(status_data, colWidths=[2*inch, 1.5*inch, 1.5*inch])
+    status_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#8b5cf6')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.lightgrey),
+        ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 10),
+        ('TOPPADDING', (0, 1), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+    ]))
+    story.append(status_table)
+    story.append(Spacer(1, 0.3*inch))
+    
+    # Add Status Distribution Pie Chart
+    try:
+        status_data = tasks_df['status'].value_counts().reset_index()
+        status_data.columns = ['status', 'count']
+        fig = px.pie(status_data, values='count', names='status',
+                    color_discrete_sequence=['#f59e0b', '#10b981'],
+                    title='Status Distribution')
+        fig.update_layout(
+            font=dict(family="Inter, sans-serif", size=12),
+            showlegend=True
+        )
+        img_path = save_plotly_as_image(fig, width=600, height=400)
+        temp_files.append(img_path)
+        img = Image(img_path, width=5*inch, height=3.3*inch)
+        story.append(img)
+        story.append(Spacer(1, 0.2*inch))
+    except Exception as e:
+        story.append(Paragraph(f"Chart generation error: {str(e)}", styles['Normal']))
+    
+    story.append(PageBreak())
+    
+    # Domain Distribution (if domain column exists)
+    if 'domain' in tasks_df.columns:
+        story.append(Paragraph("Tasks by Domain", heading_style))
+        domain_status = tasks_df.groupby(['domain', 'status']).size().unstack(fill_value=0)
+        domain_data = [['Domain', 'Pending', 'Completed', 'Total']]
+        for domain in domain_status.index:
+            pending = domain_status.loc[domain].get('Pending', 0)
+            completed = domain_status.loc[domain].get('Completed', 0)
+            total = pending + completed
+            domain_data.append([domain, str(pending), str(completed), str(total)])
+        
+        domain_table = Table(domain_data, colWidths=[2*inch, 1.3*inch, 1.3*inch, 1.4*inch])
+        domain_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#10b981')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.lightgrey),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 10),
+            ('TOPPADDING', (0, 1), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+        ]))
+        story.append(domain_table)
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Add Domain Stacked Bar Chart
+        try:
+            fig = go.Figure()
+            
+            if 'Pending' in domain_status.columns:
+                fig.add_trace(go.Bar(
+                    name='Pending',
+                    x=domain_status.index,
+                    y=domain_status['Pending'],
+                    marker_color='#f59e0b',
+                    text=domain_status['Pending'],
+                    textposition='inside'
+                ))
+            
+            if 'Completed' in domain_status.columns:
+                fig.add_trace(go.Bar(
+                    name='Completed',
+                    x=domain_status.index,
+                    y=domain_status['Completed'],
+                    marker_color='#10b981',
+                    text=domain_status['Completed'],
+                    textposition='inside'
+                ))
+            
+            fig.update_layout(
+                barmode='stack',
+                title='Tasks by Domain (Stacked)',
+                xaxis_title="Domain",
+                yaxis_title="Number of Tasks",
+                font=dict(family="Inter, sans-serif", size=12),
+                showlegend=True,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            
+            img_path = save_plotly_as_image(fig, width=700, height=450)
+            temp_files.append(img_path)
+            img = Image(img_path, width=6*inch, height=3.8*inch)
+            story.append(img)
+            story.append(Spacer(1, 0.2*inch))
+        except Exception as e:
+            story.append(Paragraph(f"Chart generation error: {str(e)}", styles['Normal']))
+    
+    # Monthly breakdown
+    if 'month' in tasks_df.columns:
+        story.append(PageBreak())
+        story.append(Paragraph("Monthly Task Distribution", heading_style))
+        month_data = tasks_df.groupby('month').size().reset_index(name='count')
+        month_table_data = [['Month', 'Task Count']]
+        for _, row in month_data.iterrows():
+            month_table_data.append([row['month'], str(row['count'])])
+        
+        month_table = Table(month_table_data, colWidths=[3*inch, 2*inch])
+        month_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2563eb')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.lightgrey),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 10),
+            ('TOPPADDING', (0, 1), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+        ]))
+        story.append(month_table)
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Add Monthly Bar Chart
+        try:
+            fig = px.bar(month_data, x='month', y='count',
+                        color_discrete_sequence=['#2563eb'],
+                        title='Tasks by Month')
+            fig.update_layout(
+                xaxis_title="Month",
+                yaxis_title="Tasks",
+                font=dict(family="Inter, sans-serif", size=12)
+            )
+            img_path = save_plotly_as_image(fig, width=700, height=400)
+            temp_files.append(img_path)
+            img = Image(img_path, width=6*inch, height=3.4*inch)
+            story.append(img)
+            story.append(Spacer(1, 0.2*inch))
+        except Exception as e:
+            story.append(Paragraph(f"Chart generation error: {str(e)}", styles['Normal']))
+        
+        # Add Quarterly Chart
+        if 'quarter' in tasks_df.columns:
+            quarter_data = tasks_df.groupby('quarter').size().reset_index(name='count')
+            try:
+                fig = px.bar(quarter_data, x='quarter', y='count',
+                            color_discrete_sequence=['#8b5cf6'],
+                            title='Tasks by Quarter')
+                fig.update_layout(
+                    xaxis_title="Quarter",
+                    yaxis_title="Tasks",
+                    font=dict(family="Inter, sans-serif", size=12)
+                )
+                img_path = save_plotly_as_image(fig, width=700, height=400)
+                temp_files.append(img_path)
+                img = Image(img_path, width=6*inch, height=3.4*inch)
+                story.append(img)
+                story.append(Spacer(1, 0.2*inch))
+            except Exception as e:
+                story.append(Paragraph(f"Chart generation error: {str(e)}", styles['Normal']))
+    
+    # Team member distribution (for admin)
+    if role == 'admin' and 'assigned_name' in tasks_df.columns:
+        story.append(Spacer(1, 0.3*inch))
+        story.append(Paragraph("Tasks by Team Member", heading_style))
+        user_data = tasks_df.groupby('assigned_name').size().reset_index(name='count')
+        user_table_data = [['Team Member', 'Task Count']]
+        for _, row in user_data.iterrows():
+            user_table_data.append([row['assigned_name'], str(row['count'])])
+        
+        user_table = Table(user_table_data, colWidths=[3*inch, 2*inch])
+        user_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#8b5cf6')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.lightgrey),
+            ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 10),
+            ('TOPPADDING', (0, 1), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+        ]))
+        story.append(user_table)
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Add Team Member Bar Chart
+        try:
+            fig = px.bar(user_data, x='assigned_name', y='count',
+                        color_discrete_sequence=['#8b5cf6'],
+                        title='Tasks by Team Member')
+            fig.update_layout(
+                xaxis_title="Team Member",
+                yaxis_title="Tasks",
+                font=dict(family="Inter, sans-serif", size=12)
+            )
+            img_path = save_plotly_as_image(fig, width=700, height=400)
+            temp_files.append(img_path)
+            img = Image(img_path, width=6*inch, height=3.4*inch)
+            story.append(img)
+        except Exception as e:
+            story.append(Paragraph(f"Chart generation error: {str(e)}", styles['Normal']))
+    
+    # Build PDF
+    doc.build(story)
+    
+    # Clean up temporary files
+    for temp_file in temp_files:
+        try:
+            os.unlink(temp_file)
+        except:
+            pass
+    
+    buffer.seek(0)
+    return buffer
+
 def show_analytics_dashboard(role):
     st.title("Analytics Dashboard")
     
@@ -770,6 +1111,21 @@ def show_analytics_dashboard(role):
     tasks_df['month'] = tasks_df['due_date'].dt.to_period('M').astype(str)
     tasks_df['quarter'] = tasks_df['due_date'].dt.to_period('Q').astype(str)
     
+    # Download PDF Button at the top
+    st.markdown("<br>", unsafe_allow_html=True)
+    col_pdf, col_spacer = st.columns([1, 3])
+    with col_pdf:
+        pdf_buffer = generate_pdf_report(tasks_df, role)
+        st.download_button(
+            label="📥 Download Analytical Report",
+            data=pdf_buffer,
+            file_name=f"analytics_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+            mime="application/pdf",
+            use_container_width=True
+        )
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -781,9 +1137,75 @@ def show_analytics_dashboard(role):
     with col4:
         create_metric_card(int(tasks_df['comment_count'].sum()), "Comments", "#8b5cf6")
     
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
+    with col1:
+        if 'domain' in tasks_df.columns:
+            st.subheader(" Tasks by Domain ")
+            domain_status = tasks_df.groupby(['domain', 'status']).size().unstack(fill_value=0)
+            
+            fig = go.Figure()
+            
+            if 'Pending' in domain_status.columns:
+                fig.add_trace(go.Bar(
+                    name='Pending',
+                    x=domain_status.index,
+                    y=domain_status['Pending'],
+                    marker_color='#f59e0b',
+                    text=domain_status['Pending'],
+                    textposition='inside'
+                ))
+            
+            if 'Completed' in domain_status.columns:
+                fig.add_trace(go.Bar(
+                    name='Completed',
+                    x=domain_status.index,
+                    y=domain_status['Completed'],
+                    marker_color='#10b981',
+                    text=domain_status['Completed'],
+                    textposition='inside'
+                ))
+            
+            fig.update_layout(
+                barmode='stack',
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                xaxis_title="Domain",
+                yaxis_title="Number of Tasks",
+                font=dict(family="Inter, sans-serif"),
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                ),
+                xaxis={'categoryorder': 'total descending'}
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+    with col2:
+        if role == 'admin':
+            st.subheader("Tasks by Team Member")
+            user_data = tasks_df.groupby('assigned_name').size().reset_index(name='count')
+            fig = px.bar(user_data, x='assigned_name', y='count',
+                        color_discrete_sequence=['#8b5cf6'])
+            fig.update_layout(
+                plot_bgcolor='white',
+                paper_bgcolor='white',
+                xaxis_title="Team Member",
+                yaxis_title="Tasks",
+                font=dict(family="Inter, sans-serif")
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+
+
+    # Monthly and Quarterly Charts
+    col1, col2 = st.columns(2)
+
     
     with col1:
         st.subheader("Tasks by Month")
@@ -813,6 +1235,7 @@ def show_analytics_dashboard(role):
         )
         st.plotly_chart(fig, use_container_width=True)
     
+    # Status and Comments Charts
     col1, col2 = st.columns(2)
     
     with col1:
@@ -842,34 +1265,77 @@ def show_analytics_dashboard(role):
         )
         st.plotly_chart(fig, use_container_width=True)
     
-    if role == 'admin':
-        st.subheader("Tasks by Team Member")
-        user_data = tasks_df.groupby('assigned_name').size().reset_index(name='count')
-        fig = px.bar(user_data, x='assigned_name', y='count',
-                    color_discrete_sequence=['#8b5cf6'])
-        fig.update_layout(
-            plot_bgcolor='white',
-            paper_bgcolor='white',
-            xaxis_title="Team Member",
-            yaxis_title="Tasks",
-            font=dict(family="Inter, sans-serif")
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    # Team Member Chart (Admin only)
+    
+
+# def show_comments_page():
+#     st.title("All Comments")
+    
+#     conn = get_db_connection()
+#     query = '''SELECT c.*, u.name, u.email, t.title as task_title
+#                FROM comments c
+#                JOIN users u ON c.user_id = u.user_id
+#                JOIN tasks t ON c.task_id = t.task_id
+#                ORDER BY c.created_at DESC'''
+#     comments_df = pd.read_sql_query(query, conn)
+#     conn.close()
+    
+#     if not comments_df.empty:
+#         for _, comment in comments_df.iterrows():
+#             st.markdown(f"""
+#             <div style='
+#                 background-color: #ffffff;
+#                 padding: 1.25rem;
+#                 border-radius: 6px;
+#                 margin: 0.75rem 0;
+#                 border: 1px solid #e2e8f0;
+#                 border-left: 3px solid #2563eb;
+#             '>
+#                 <div style='margin-bottom: 0.75rem;'>
+#                     <span style='background-color: #dbeafe; color: #1e40af; padding: 0.25rem 0.625rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600;'>{comment['task_title']}</span>
+#                 </div>
+#                 <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;'>
+#                     <strong style='color: #0f172a; font-size: 0.875rem;'>{comment['name']}</strong>
+#                     <small style='color: #64748b; font-size: 0.75rem;'>{comment['created_at']}</small>
+#                 </div>
+#                 <p style='margin: 0; color: #334155; line-height: 1.6; font-size: 0.875rem;'>{comment['comment_text']}</p>
+#             </div>
+#             """, unsafe_allow_html=True)
+#     else:
+#         st.info("No comments yet")
+
 
 def show_comments_page():
     st.title("All Comments")
     
-    conn = get_db_connection()
-    query = '''SELECT c.*, u.name, u.email, t.title as task_title
-               FROM comments c
-               JOIN users u ON c.user_id = u.user_id
-               JOIN tasks t ON c.task_id = t.task_id
-               ORDER BY c.created_at DESC'''
-    comments_df = pd.read_sql_query(query, conn)
-    conn.close()
+    db = get_db_connection()
+    if db is None:
+        st.error("Database connection failed")
+        return
     
-    if not comments_df.empty:
-        for _, comment in comments_df.iterrows():
+    # Get all comments with user and task info
+    comments = list(db['comments'].find().sort('created_at', -1))
+    
+    # Enrich comments with user and task information
+    enriched_comments = []
+    for comment in comments:
+        # Get user info
+        user = db['users'].find_one({'_id': ObjectId(comment['user_id'])})
+        # Get task info
+        task = db['tasks'].find_one({'_id': ObjectId(comment['task_id'])})
+        
+        if user and task:
+            enriched_comments.append({
+                'comment_id': str(comment['_id']),
+                'comment_text': comment['comment_text'],
+                'created_at': comment['created_at'].strftime('%Y-%m-%d %H:%M:%S') if isinstance(comment['created_at'], datetime) else str(comment['created_at']),
+                'name': user['name'],
+                'email': user['email'],
+                'task_title': task['title']
+            })
+    
+    if enriched_comments:
+        for comment in enriched_comments:
             st.markdown(f"""
             <div style='
                 background-color: #ffffff;
@@ -891,7 +1357,6 @@ def show_comments_page():
             """, unsafe_allow_html=True)
     else:
         st.info("No comments yet")
-
 def show_email_page():
     st.title("Email Center")
       
