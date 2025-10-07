@@ -252,13 +252,10 @@
 #         return False
 
 
-from datetime import datetime, date
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-import pandas as pd
-import streamlit as st
 from pymongo import MongoClient
+import streamlit as st
+import pandas as pd
+from datetime import datetime, date
 from bson.objectid import ObjectId
 
 
@@ -516,7 +513,7 @@ def add_user(name, email, role='user'):
         return False
 
 
-# ✅ Email Summary Function (unchanged)
+# ✅ Email Summary Function
 def send_email_summary(user_email, user_name, tasks_df, sender_email, sender_password):
     try:
         msg = MIMEMultipart('alternative')
