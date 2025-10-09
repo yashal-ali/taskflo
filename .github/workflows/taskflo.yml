@@ -370,6 +370,7 @@ on:
 jobs:
   send-compliance-emails:
     runs-on: ubuntu-latest
+    environment: production
     
     steps:
       - name: Checkout repository
