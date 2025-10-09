@@ -716,6 +716,7 @@ class ComplianceEmailSystem:
     def __init__(self):
         # MongoDB connection
         try:
+            # Use st.secrets for MongoDB
             mongo_uri = st.secrets["mongodb"]["uri"]
             self.client = MongoClient(mongo_uri)
             self.client.admin.command('ping')
@@ -725,6 +726,7 @@ class ComplianceEmailSystem:
             logger.error(f"❌ Failed to connect to MongoDB: {e}")
             self.db = None
         
+        # Keep using os.environ for SMTP (since they're set in GitHub Actions env)
         self.smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
         
         # Handle empty or invalid SMTP_PORT values
@@ -736,36 +738,7 @@ class ComplianceEmailSystem:
             self.smtp_port = 587
             
         self.smtp_username = os.environ.get("SMTP_USERNAME")
-        self.smtp_password = os.environ.get("SMTP_PASSWORD")
-
-        # Department heads mapping
-        self.department_heads = {
-            'SAP': 'yashal.ali@nfoods.com',
-            'SalesFlo': 'haniyamaqsood18@gmail.com',
-            'NFlo': 'haniyamaqsood18@gmail.com',
-            'EC': 'yashal.ali@nfoods.com',
-            'Network': 'yashal.ali@nfoods.com',
-            'Help Desk': 'farooqui4408609@cloud.neduet.edu.pk',
-            'IT-Governance': 'yasir.sarwar@nfoods.com'
-        }
-
-        # Debug environment variables
-        smtp_password_debug = "***SET***" if self.smtp_password else "***MISSING***"
-        logger.info(
-            f"SMTP Configuration: Server={self.smtp_server}, Port={self.smtp_port}, "
-            f"Username={self.smtp_username}, Password={smtp_password_debug}"
-        )
-
-        if not all([self.smtp_server, self.smtp_port, self.smtp_username, self.smtp_password]):
-            missing = []
-            if not self.smtp_server: missing.append("SMTP_SERVER")
-            if not self.smtp_port: missing.append("SMTP_PORT")
-            if not self.smtp_username: missing.append("SMTP_USERNAME")
-            if not self.smtp_password: missing.append("SMTP_PASSWORD")
-            logger.error(f"❌ Missing SMTP credentials: {missing}")
-        
-        self.data = None
-    
+        self.smtp_password = os.environ.get("SMTP_PASSWORD")  
     def load_database_data(self) -> bool:
         """Load and validate data from MongoDB database"""
         try:

@@ -383,16 +383,18 @@ jobs:
           pip install pandas python-dotenv pymongo streamlit
 
       - name: Create Streamlit secrets file for MongoDB
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
         run: |
           mkdir -p .streamlit
           cat > .streamlit/secrets.toml << EOF
           [mongodb]
-          uri = "${{ secrets.MONGODB_URI }}"
+          uri = "$MONGODB_URI"
           EOF
           echo "✅ Created Streamlit secrets file"
-          # Verify the file was created
-          echo "Secrets file content (first 50 chars):"
-          head -c 50 .streamlit/secrets.toml
+          # Verify the file was created with content
+          echo "Secrets file content:"
+          cat .streamlit/secrets.toml
           echo ""
 
       - name: Determine schedule type
@@ -436,10 +438,24 @@ jobs:
             echo "DRY_RUN=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Debug Environment Variables
+        if: steps.schedule_type.outputs.TYPE != 'skip'
+        run: |
+          echo "🔍 Debugging environment variables:"
+          echo "MONGODB_URI length: ${#MONGODB_URI}"
+          echo "SMTP_SERVER: $SMTP_SERVER"
+          echo "SMTP_PORT: $SMTP_PORT"
+          echo "SMTP_USERNAME: $SMTP_USERNAME"
+          echo "SMTP_PASSWORD length: ${#SMTP_PASSWORD}"
+
       - name: Test MongoDB connection
         if: steps.schedule_type.outputs.TYPE != 'skip'
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
         run: |
           echo "Testing MongoDB connection..."
           echo "MongoDB URI length: ${#MONGODB_URI}"
@@ -458,6 +474,7 @@ jobs:
           
           if not mongodb_uri:
               print("❌ ERROR: MONGODB_URI environment variable is empty")
+              print("Please check that MONGODB_URI is set as a GitHub secret")
               sys.exit(1)
               
           try:
@@ -499,53 +516,17 @@ jobs:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
         run: |
           echo "Running compliance emails for schedule type: ${{ steps.schedule_type.outputs.TYPE }}"
+          echo "Environment variables check:"
+          echo "MONGODB_URI length: ${#MONGODB_URI}"
+          echo "SMTP_SERVER: $SMTP_SERVER"
+          echo "SMTP_USERNAME: $SMTP_USERNAME"
           
           if [ "${{ steps.schedule_type.outputs.DRY_RUN }}" = "true" ]; then
             echo "🚀 Running in DRY-RUN mode (no emails sent)"
-            python -c "
-            import sys
-            sys.path.append('.')
-            try:
-                from script import ComplianceEmailSystem
-                system = ComplianceEmailSystem()
-                if '${{ steps.schedule_type.outputs.TYPE }}' == 'escalation':
-                    result = system.send_escalation_reports(dry_run=True)
-                else:
-                    result = system.process_tasks('${{ steps.schedule_type.outputs.TYPE }}', dry_run=True)
-                print('Dry run result:', result)
-            except ImportError as e:
-                print(f'❌ Import error: {e}')
-                print('Make sure script.py contains ComplianceEmailSystem class')
-                import traceback
-                traceback.print_exc()
-            except Exception as e:
-                print(f'❌ Error: {e}')
-                import traceback
-                traceback.print_exc()
-            "
+            python script.py ${{ steps.schedule_type.outputs.TYPE }} --dry-run
           else
             echo "📧 Running in LIVE mode (emails will be sent)"
-            python -c "
-            import sys
-            sys.path.append('.')
-            try:
-                from script import ComplianceEmailSystem
-                system = ComplianceEmailSystem()
-                if '${{ steps.schedule_type.outputs.TYPE }}' == 'escalation':
-                    result = system.send_escalation_reports(dry_run=False)
-                else:
-                    result = system.process_tasks('${{ steps.schedule_type.outputs.TYPE }}', dry_run=False)
-                print('Live run result:', result)
-            except ImportError as e:
-                print(f'❌ Import error: {e}')
-                print('Make sure script.py contains ComplianceEmailSystem class')
-                import traceback
-                traceback.print_exc()
-            except Exception as e:
-                print(f'❌ Error: {e}')
-                import traceback
-                traceback.print_exc()
-            "
+            python script.py ${{ steps.schedule_type.outputs.TYPE }}
           fi
 
       - name: Skip execution
@@ -564,14 +545,3 @@ jobs:
         run: |
           echo "❌ ${{ steps.schedule_type.outputs.TYPE }} compliance automation failed!"
           echo "Please check the logs for details."
-
-
-
-
-
-
-
-
-
-
-
