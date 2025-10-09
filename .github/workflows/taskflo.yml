@@ -333,23 +333,27 @@ name: Compliance Email Automation
 
 on:
   schedule:
-    # Daily reminders - every day at 9:00 AM Pakistan Time (4:00 AM UTC)
-    - cron: '0 4 * * *'
-    # Monthly tasks - 1st of every month at 9:00 AM Pakistan Time (4:00 AM UTC)
-    - cron: '0 4 1 * *'
-    # Quarterly tasks - 25th of quarter-end months (Mar, Jun, Sep, Dec) at 9:00 AM Pakistan Time (4:00 AM UTC)
-    - cron: '0 4 25 3,6,9,12 *'
-    # Weekly reminders - every Monday at 9:00 AM Pakistan Time (4:00 AM UTC)
-    - cron: '0 4 * * 1'
-    # Escalation reports - every day at 11:00 AM Pakistan Time (6:00 AM UTC)
-    - cron: '0 6 * * *'
+    # Daily reminders - every day at 6:00 PM UTC (9:00 PM Pakistan)
+    - cron: '0 18 * * *'
+    
+    # Monthly tasks - 1st of every month at 9:00 AM UTC (12:00 PM Pakistan)
+    - cron: '0 9 1 * *'
+    
+    # Quarterly tasks - 25th of quarter-end months (Mar, Jun, Sep, Dec) at 9:00 AM UTC
+    - cron: '0 9 25 3,6,9,12 *'
+    
+    # Weekly reminders - every Monday at 9:00 AM UTC (12:00 PM Pakistan)
+    - cron: '0 9 * * 1'
+    
+    # Escalation reports - every 3rd day at 10:00 AM UTC (1:00 PM Pakistan)
+    - cron: '0 10 */3 * *'
 
   workflow_dispatch:
     inputs:
       schedule_type:
-        description: 'Schedule type to run manually'
+        description: 'Schedule type to run'
         required: true
-        default: 'daily'
+        default: 'reminder'
         type: choice
         options:
           - daily
@@ -360,14 +364,13 @@ on:
       dry_run:
         description: 'Run in dry-run mode (no emails sent)'
         required: false
-        default: true
+        default: false
         type: boolean
 
 jobs:
   send-compliance-emails:
     runs-on: ubuntu-latest
-    environment: 'production'
-
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -380,181 +383,99 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas python-dotenv pymongo streamlit
-
-      - name: Create Environment File
-        run: |
-          cat > .env << EOF
-          SMTP_SERVER=${{ secrets.SMTP_SERVER }}
-          SMTP_PORT=${{ secrets.SMTP_PORT }}
-          SMTP_USERNAME=${{ secrets.SMTP_USERNAME }}
-          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
-          MONGODB_URI=${{ secrets.MONGODB_URI }}
-          EOF
-          echo "✅ Created .env file"
-          echo ".env file content (first 100 chars):"
-          head -c 100 .env
-
-      - name: Create Streamlit secrets file for MongoDB
-        env:
-          MONGODB_URI: ${{ secrets.MONGODB_URI }}
-        run: |
-          mkdir -p .streamlit
-          cat > .streamlit/secrets.toml << EOF
-          [mongodb]
-          uri = "$MONGODB_URI"
-          EOF
-          echo "✅ Created Streamlit secrets file"
-          # Verify the file was created with content
-          echo "Secrets file content:"
-          cat .streamlit/secrets.toml
-          echo ""
+          pip install -r requirements.txt
 
       - name: Determine schedule type
         id: schedule_type
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             echo "TYPE=${{ github.event.inputs.schedule_type }}" >> $GITHUB_OUTPUT
-            echo "DRY_RUN=${{ github.event.inputs.dry_run }}" >> $GITHUB_OUTPUT
-          else
-            CURRENT_DAY=$(date +%d)
-            CURRENT_MONTH=$(date +%m)
-            CURRENT_DOW=$(date +%u)  # 1=Monday
-            CURRENT_HOUR=$(date +%H)
-
-            echo "Current date: $(date)"
-            echo "Day: $CURRENT_DAY, Month: $CURRENT_MONTH, Day of week: $CURRENT_DOW, Hour: $CURRENT_HOUR"
-
-            # Determine schedule type based on time (UTC)
-            if [ "$CURRENT_HOUR" = "04" ]; then  # 9 AM PKT
-              if [ "$CURRENT_DAY" = "01" ]; then
-                echo "TYPE=monthly" >> $GITHUB_OUTPUT
-                echo "📅 Detected 1st of month - running monthly tasks"
-              elif [ "$CURRENT_DAY" = "25" ] && [[ "$CURRENT_MONTH" =~ ^(03|06|09|12)$ ]]; then
-                echo "TYPE=quarterly" >> $GITHUB_OUTPUT
-                echo "📅 Detected 25th of quarter-end month - running quarterly tasks"
-              elif [ "$CURRENT_DOW" = "1" ]; then
-                echo "TYPE=reminder" >> $GITHUB_OUTPUT
-                echo "📅 Detected Monday - running weekly reminders"
-              else
-                echo "TYPE=daily" >> $GITHUB_OUTPUT
-                echo "📅 Running daily tasks"
-              fi
-            elif [ "$CURRENT_HOUR" = "06" ]; then  # 11 AM PKT
-              echo "TYPE=escalation" >> $GITHUB_OUTPUT
-              echo "📅 Running escalation reports"
+            if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
+              echo "DRY_RUN=--dry-run" >> $GITHUB_OUTPUT
+            else
+              echo "DRY_RUN=" >> $GITHUB_OUTPUT
+            fi
+          elif [ "${{ github.event.schedule }}" == "0 9 1 * *" ]; then
+            echo "TYPE=monthly" >> $GITHUB_OUTPUT
+            echo "DRY_RUN=" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.schedule }}" == "0 9 25 3,6,9,12 *" ]; then
+            # Verify it's actually the 25th of a quarter-end month
+            TODAY_MONTH=$(date +%m)
+            TODAY_DAY=$(date +%d)
+            if [ "$TODAY_DAY" = "25" ] && ([ "$TODAY_MONTH" = "03" ] || [ "$TODAY_MONTH" = "06" ] || [ "$TODAY_MONTH" = "09" ] || [ "$TODAY_MONTH" = "12" ]); then
+              echo "TYPE=quarterly" >> $GITHUB_OUTPUT
+              echo "DRY_RUN=" >> $GITHUB_OUTPUT
             else
               echo "TYPE=skip" >> $GITHUB_OUTPUT
-              echo "⏭️ No matching schedule for current time"
+              echo "DRY_RUN=" >> $GITHUB_OUTPUT
             fi
-
-            echo "DRY_RUN=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Debug Environment Variables
-        if: steps.schedule_type.outputs.TYPE != 'skip'
-        run: |
-          echo "🔍 Debugging environment variables:"
-          echo "MONGODB_URI length: ${#MONGODB_URI}"
-          echo "SMTP_SERVER: $SMTP_SERVER"
-          echo "SMTP_PORT: $SMTP_PORT"
-          echo "SMTP_USERNAME: $SMTP_USERNAME"
-          echo "SMTP_PASSWORD length: ${#SMTP_PASSWORD}"
-
-      - name: Test MongoDB connection
-        if: steps.schedule_type.outputs.TYPE != 'skip'
-        env:
-          MONGODB_URI: ${{ secrets.MONGODB_URI }}
-          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-        run: |
-          echo "Testing MongoDB connection..."
-          echo "MongoDB URI length: ${#MONGODB_URI}"
-          
-          # Create a simple Python test script
-          cat > test_mongodb.py << 'EOF'
-          import os
-          import sys
-          from pymongo import MongoClient
-          from pymongo.errors import ConnectionFailure, ConfigurationError
-
-          mongodb_uri = os.environ.get('MONGODB_URI', '').strip()
-          
-          print(f"MongoDB URI present: {'Yes' if mongodb_uri else 'No'}")
-          print(f"URI length: {len(mongodb_uri)}")
-          
-          if not mongodb_uri:
-              print("❌ ERROR: MONGODB_URI environment variable is empty")
-              print("Please check that MONGODB_URI is set as a GitHub secret")
-              sys.exit(1)
-              
-          try:
-              print("Attempting to connect to MongoDB...")
-              client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
-              
-              # Test connection
-              client.admin.command('ping')
-              print('✅ MongoDB connection successful')
-              
-              # Test database access
-              db = client['task_management_db']
-              tasks_count = db.tasks.count_documents({})
-              users_count = db.users.count_documents({})
-              print(f'📊 Database stats: {tasks_count} tasks, {users_count} users')
-              
-              client.close()
-              
-          except ConnectionFailure as e:
-              print(f'❌ MongoDB connection failed: {e}')
-              sys.exit(1)
-          except ConfigurationError as e:
-              print(f'❌ MongoDB configuration error: {e}')
-              sys.exit(1)
-          except Exception as e:
-              print(f'❌ Unexpected error: {e}')
-              sys.exit(1)
-          EOF
-          
-          python test_mongodb.py
-
-      - name: Run Compliance System
-        if: steps.schedule_type.outputs.TYPE != 'skip'
-        env:
-          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          MONGODB_URI: ${{ secrets.MONGODB_URI }}
-        run: |
-          echo "Running compliance emails for schedule type: ${{ steps.schedule_type.outputs.TYPE }}"
-          echo "Environment variables check:"
-          echo "MONGODB_URI length: ${#MONGODB_URI}"
-          echo "SMTP_SERVER: $SMTP_SERVER"
-          echo "SMTP_USERNAME: $SMTP_USERNAME"
-          
-          if [ "${{ steps.schedule_type.outputs.DRY_RUN }}" = "true" ]; then
-            echo "🚀 Running in DRY-RUN mode (no emails sent)"
-            python script.py ${{ steps.schedule_type.outputs.TYPE }} --dry-run
+          elif [ "${{ github.event.schedule }}" == "0 9 * * 1" ]; then
+            echo "TYPE=reminder" >> $GITHUB_OUTPUT
+            echo "DRY_RUN=" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.schedule }}" == "0 10 */3 * *" ]; then
+            echo "TYPE=escalation" >> $GITHUB_OUTPUT
+            echo "DRY_RUN=" >> $GITHUB_OUTPUT
           else
-            echo "📧 Running in LIVE mode (emails will be sent)"
-            python script.py ${{ steps.schedule_type.outputs.TYPE }}
+            echo "TYPE=daily" >> $GITHUB_OUTPUT
+            echo "DRY_RUN=" >> $GITHUB_OUTPUT
           fi
 
-      - name: Skip execution
+      - name: Debug environment
+        run: |
+          echo "=== Environment Debug Info ==="
+          echo "Schedule type: ${{ steps.schedule_type.outputs.TYPE }}"
+          echo "Dry run flag: ${{ steps.schedule_type.outputs.DRY_RUN }}"
+          echo "Current date: $(date +%Y-%m-%d)"
+          echo "Current time (UTC): $(date +%H:%M:%S)"
+          echo "SMTP_SERVER configured: ${{ secrets.SMTP_SERVER != '' }}"
+          echo "SMTP_PORT configured: ${{ secrets.SMTP_PORT != '' }}"
+          echo "SMTP_USERNAME configured: ${{ secrets.SMTP_USERNAME != '' }}"
+          echo "SMTP_PASSWORD configured: ${{ secrets.SMTP_PASSWORD != '' }}"
+          echo "MongoDB URI configured: ${{ secrets.MONGODB_URI != '' }}"
+
+      - name: Create Streamlit secrets file
+        run: |
+          mkdir -p .streamlit
+          cat > .streamlit/secrets.toml << EOF
+          [mongodb]
+          uri = "${{ secrets.MONGODB_URI }}"
+          EOF
+          echo "✅ Streamlit secrets file created"
+
+      - name: Run Compliance Email System
+        if: steps.schedule_type.outputs.TYPE != 'skip'
+        env:
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        run: |
+          echo "=== Starting Compliance Email System ==="
+          echo "Schedule type: ${{ steps.schedule_type.outputs.TYPE }}"
+          echo "Dry run: ${{ steps.schedule_type.outputs.DRY_RUN }}"
+          
+          python script.py "${{ steps.schedule_type.outputs.TYPE }}" ${{ steps.schedule_type.outputs.DRY_RUN }}
+          
+          echo "=== Execution completed ==="
+
+      - name: Skip execution message
         if: steps.schedule_type.outputs.TYPE == 'skip'
-        run: echo "⏭️ No matching schedule — skipping execution."
-
-      - name: Success notification
-        if: success() && steps.schedule_type.outputs.TYPE != 'skip'
         run: |
-          echo "✅ ${{ steps.schedule_type.outputs.TYPE }} compliance automation completed successfully!"
-          echo "📊 Schedule type: ${{ steps.schedule_type.outputs.TYPE }}"
-          echo "🎯 Dry run: ${{ steps.schedule_type.outputs.DRY_RUN }}"
+          echo "⏭️ Skipping execution - not the 25th of a quarter-end month"
+          echo "Today is: $(date +%Y-%m-%d)"
 
-      - name: Failure notification
-        if: failure() && steps.schedule_type.outputs.TYPE != 'skip'
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-logs-${{ github.run_id }}
+          path: |
+            *.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Notify on failure
+        if: failure()
         run: |
-          echo "❌ ${{ steps.schedule_type.outputs.TYPE }} compliance automation failed!"
-          echo "Please check the logs for details."
+          echo "❌ Workflow failed for schedule type: ${{ steps.schedule_type.outputs.TYPE }}"
+          echo "Check the logs artifact for details"
