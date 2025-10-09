@@ -382,6 +382,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas python-dotenv pymongo streamlit
 
+      - name: Create Environment File
+        run: |
+          cat > .env << EOF
+          SMTP_SERVER=${{ secrets.SMTP_SERVER }}
+          SMTP_PORT=${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME=${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
+          MONGODB_URI=${{ secrets.MONGODB_URI }}
+          EOF
+          echo "✅ Created .env file"
+          echo ".env file content (first 100 chars):"
+          head -c 100 .env
+
       - name: Create Streamlit secrets file for MongoDB
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
