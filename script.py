@@ -739,6 +739,16 @@ class ComplianceEmailSystem:
             
         self.smtp_username = os.environ.get("SMTP_USERNAME")
         self.smtp_password = os.environ.get("SMTP_PASSWORD")  
+
+        self.department_heads = {
+            'SAP': 'yashal.ali@nfoods.com',
+            'SalesFlo': 'haniyamaqsood18@gmail.com',
+            'NFlo': 'haniyamaqsood18@gmail.com',
+            'EC': 'yashal.ali@nfoods.com',
+            'Network': 'yashal.ali@nfoods.com',
+            'Help Desk': 'farooqui4408609@cloud.neduet.edu.pk',
+            'IT-Governance': 'yasir.sarwar@nfoods.com'
+        }
     def load_database_data(self) -> bool:
         """Load and validate data from MongoDB database"""
         try:
