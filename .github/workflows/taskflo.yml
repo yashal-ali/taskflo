@@ -420,18 +420,48 @@ jobs:
             echo "DRY_RUN=" >> $GITHUB_OUTPUT
           fi
 
-      - name: Debug environment
+      - name: Validate required secrets
         run: |
-          echo "=== Environment Debug Info ==="
+          echo "=== Validating Configuration ==="
+          
+          MISSING_SECRETS=()
+          
+          if [ -z "${{ secrets.MONGODB_URI }}" ]; then
+            MISSING_SECRETS+=("MONGODB_URI")
+          fi
+          
+          if [ -z "${{ secrets.SMTP_SERVER }}" ]; then
+            MISSING_SECRETS+=("SMTP_SERVER")
+          fi
+          
+          if [ -z "${{ secrets.SMTP_PORT }}" ]; then
+            MISSING_SECRETS+=("SMTP_PORT")
+          fi
+          
+          if [ -z "${{ secrets.SMTP_USERNAME }}" ]; then
+            MISSING_SECRETS+=("SMTP_USERNAME")
+          fi
+          
+          if [ -z "${{ secrets.SMTP_PASSWORD }}" ]; then
+            MISSING_SECRETS+=("SMTP_PASSWORD")
+          fi
+          
+          if [ ${#MISSING_SECRETS[@]} -gt 0 ]; then
+            echo "❌ ERROR: Missing required secrets:"
+            for secret in "${MISSING_SECRETS[@]}"; do
+              echo "   - $secret"
+            done
+            echo ""
+            echo "Please add these secrets in: Settings → Secrets and variables → Actions"
+            echo "Required secrets: MONGODB_URI, SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD"
+            exit 1
+          fi
+          
+          echo "✅ All required secrets are configured"
           echo "Schedule type: ${{ steps.schedule_type.outputs.TYPE }}"
           echo "Dry run flag: ${{ steps.schedule_type.outputs.DRY_RUN }}"
           echo "Current date: $(date +%Y-%m-%d)"
           echo "Current time (UTC): $(date +%H:%M:%S)"
-          echo "SMTP_SERVER configured: ${{ secrets.SMTP_SERVER != '' }}"
-          echo "SMTP_PORT configured: ${{ secrets.SMTP_PORT != '' }}"
-          echo "SMTP_USERNAME configured: ${{ secrets.SMTP_USERNAME != '' }}"
-          echo "SMTP_PASSWORD configured: ${{ secrets.SMTP_PASSWORD != '' }}"
-          echo "MongoDB URI configured: ${{ secrets.MONGODB_URI != '' }}"
 
       - name: Create Streamlit secrets file
         run: |
